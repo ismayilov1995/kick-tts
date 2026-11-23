@@ -11,7 +11,7 @@
     "build:mac-arm64": "bun build --compile --minify --target=bun-darwin-arm64 src/main.ts --outfile dist/KickTTS-mac-arm64",
     "build:mac-x64": "bun build --compile --minify --target=bun-darwin-x64 src/main.ts --outfile dist/KickTTS-mac-x64",
     "build:win-x64": "bun build --compile --minify --target=bun-windows-x64 src/main.ts --outfile dist/KickTTS-win-x64.exe",
-    "build": "bun run build:mac-arm64 && bun run build:mac-x64 && bun run build:win-x64"
+    "build": "bun run build:mac-arm64 && bun run build:mac-x64 && bun run build:win-x64 && ditto -c -k --keepParent dist/KickTTS-mac-arm64 dist/KickTTS-mac-arm64.zip && ditto -c -k --keepParent dist/KickTTS-mac-x64 dist/KickTTS-mac-x64.zip"
   },
   "devDependencies": {
     "@types/bun": "^1.4.5",
