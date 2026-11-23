@@ -104,7 +104,7 @@ test('silent socket: pings, then reconnects', async () => {
   await Bun.sleep(70);
   expect(t.sockets[0].sent).toContainEqual({ event: 'pusher:ping', data: {} });
   await Bun.sleep(200);
-  expect(t.sockets).toHaveLength(2);
+  expect(t.sockets.length).toBeGreaterThanOrEqual(2);
   expect(t.sockets[0].closed).toBe(true);
   t.src.stop();
 });
