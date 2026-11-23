@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DEFAULT_SETTINGS, loadSettings, mergeSettings, saveSettings } from '../src/settings';
@@ -51,4 +51,12 @@ test('save/load round trip; corrupt file falls back to defaults', () => {
   expect(loadSettings(file).username).toBe('murad');
   writeFileSync(file, '{oops');
   expect(loadSettings(file).username).toBe('');
+});
+
+test('corrupt settings file is moved to .bad', () => {
+  const f = join(mkdtempSync(join(tmpdir(), 'kt-')), 'settings.json');
+  writeFileSync(f, '{ not json');
+  expect(loadSettings(f)).toEqual(mergeSettings(undefined));
+  expect(existsSync(f)).toBe(false);
+  expect(existsSync(`${f}.bad`)).toBe(true);
 });

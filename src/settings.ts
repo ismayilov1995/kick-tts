@@ -58,9 +58,18 @@ export function mergeSettings(raw: unknown, base: Settings = DEFAULT_SETTINGS): 
 }
 
 export function loadSettings(file: string): Settings {
+  let text: string;
   try {
-    return mergeSettings(JSON.parse(readFileSync(file, 'utf8')));
+    text = readFileSync(file, 'utf8');
   } catch {
+    return mergeSettings(undefined); // no file yet
+  }
+  try {
+    return mergeSettings(JSON.parse(text));
+  } catch {
+    try {
+      renameSync(file, `${file}.bad`); // keep the user's templates instead of overwriting on next save
+    } catch {}
     return mergeSettings(undefined);
   }
 }
