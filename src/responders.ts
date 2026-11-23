@@ -1,4 +1,4 @@
-import type { KickEvent, Responder, Utterance } from './types';
+import type { KickEvent, Responder, UserContext, Utterance } from './types';
 import type { Settings } from './settings';
 import { cleanText } from './text';
 
@@ -6,7 +6,7 @@ import { cleanText } from './text';
 export class DirectResponder implements Responder {
   constructor(private settings: () => Settings) {}
 
-  respond(e: KickEvent): Utterance[] {
+  respond(e: KickEvent, _ctx?: UserContext): Utterance[] {
     const s = this.settings();
     const said = (raw: string | undefined) => {
       const body = cleanText(raw ?? '', s.maxLength);
