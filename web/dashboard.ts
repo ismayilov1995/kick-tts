@@ -11,8 +11,21 @@ async function api<T = any>(path: string, method = 'GET', body?: unknown): Promi
     headers: body === undefined ? {} : { 'content-type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
+  if (!res.ok) throw new Error(`${res.status}`);
   return (res.status === 204 ? null : await res.json()) as T;
 }
+
+const fail = (err: unknown) => {
+  console.error(err);
+  alert('Xəta: server cavab vermədi');
+};
+const safe = <A extends unknown[]>(fn: (...a: A) => unknown) => (...a: A) => {
+  try {
+    Promise.resolve(fn(...a)).catch(fail);
+  } catch (err) {
+    fail(err);
+  }
+};
 
 const SLOTS: Record<string, string> = { main: 'Əsas səs', cyrillic: 'Kiril mətn üçün səs', announcer: 'Aparıcı səsi (şablonlar)' };
 const TEMPLATES: Record<string, string> = {
@@ -41,7 +54,7 @@ function renderSettings(): void {
     const key = el.dataset.key!;
     if (el.type === 'checkbox') el.checked = settings[key];
     else el.value = String(settings[key]);
-    el.onchange = () => save({ [key]: el.type === 'checkbox' ? el.checked : el.type === 'number' ? Number(el.value) : el.value });
+    el.onchange = safe(() => save({ [key]: el.type === 'checkbox' ? el.checked : el.type === 'number' ? Number(el.value) : el.value }));
   });
 
   $('voices').innerHTML = Object.entries(SLOTS)
@@ -50,10 +63,10 @@ function renderSettings(): void {
       .join('')}</select></label><button data-listen="${slot}">Dinlə</button></div>`)
     .join('');
   document.querySelectorAll<HTMLSelectElement>('[data-slot]').forEach((el) => {
-    el.onchange = () => save({ voices: { [el.dataset.slot!]: el.value } });
+    el.onchange = safe(() => save({ voices: { [el.dataset.slot!]: el.value } }));
   });
   document.querySelectorAll<HTMLButtonElement>('[data-listen]').forEach((el) => {
-    el.onclick = () => api('/api/test', 'POST', { slot: el.dataset.listen });
+    el.onclick = safe(() => api('/api/test', 'POST', { slot: el.dataset.listen }));
   });
 
   $('templates').innerHTML = Object.entries(TEMPLATES)
@@ -61,10 +74,10 @@ function renderSettings(): void {
       <textarea data-tpl="${key}" rows="2">${esc(settings.templates[key].variants.join('\n'))}</textarea></fieldset>`)
     .join('');
   document.querySelectorAll<HTMLInputElement>('[data-tpl-on]').forEach((el) => {
-    el.onchange = () => save({ templates: { [el.dataset.tplOn!]: { enabled: el.checked } } });
+    el.onchange = safe(() => save({ templates: { [el.dataset.tplOn!]: { enabled: el.checked } } }));
   });
   document.querySelectorAll<HTMLTextAreaElement>('[data-tpl]').forEach((el) => {
-    el.onchange = () => save({ templates: { [el.dataset.tpl!]: { variants: el.value.split('\n') } } });
+    el.onchange = safe(() => save({ templates: { [el.dataset.tpl!]: { variants: el.value.split('\n') } } }));
   });
 }
 
@@ -98,7 +111,7 @@ async function loadUsers(): Promise<void> {
       .map((r, i) => `<tr data-user="${esc(r.user_id)}"><td>${i + 1}</td><td>${esc(r.username)}${r.blocked ? ' 🚫' : ''}</td><td>${esc(r.level)}</td><td>${r.score}</td><td>${r.msg_count}</td><td>${r.days_active}</td><td>${r.streak}</td></tr>`)
       .join('');
   $('users').querySelectorAll<HTMLTableRowElement>('[data-user]').forEach((tr) => {
-    tr.onclick = () => showProfile(tr.dataset.user!);
+    tr.onclick = safe(() => showProfile(tr.dataset.user!));
   });
 }
 
@@ -110,17 +123,17 @@ async function showProfile(id: string): Promise<void> {
     <p class="hint">Mesaj: ${p.msg_count} · Gün: ${p.days_active} · Streak: ${p.streak} · KICK: ${p.kicks_total} · Abunə: ${p.subs} · Hədiyyə abunə: ${p.gift_subs} · Reward: ${p.redemptions}</p>
     <button id="block">${p.blocked ? 'Bloku aç' : 'Blokla'}</button> <button id="delete" class="danger">Məlumatı sil</button>
     <ul>${p.recent.map((m: { text: string; ts: number }) => `<li><time>${new Date(m.ts).toLocaleString()}</time> ${esc(m.text)}</li>`).join('')}</ul>`;
-  $('block').onclick = async () => {
+  $('block').onclick = safe(async () => {
     await api(`${url}/block`, 'POST', { blocked: !p.blocked });
     await showProfile(id);
     await loadUsers();
-  };
-  $('delete').onclick = async () => {
+  });
+  $('delete').onclick = safe(async () => {
     if (!confirm(`${p.username} haqqında bütün məlumat silinsin? Bu geri qaytarıla bilməz.`)) return;
     await api(url, 'DELETE');
     $('profile').innerHTML = '';
     await loadUsers();
-  };
+  });
 }
 
 async function connectKick(): Promise<void> {
@@ -135,18 +148,18 @@ async function connectKick(): Promise<void> {
   if (r.error) alert(r.error);
 }
 
-$('connect').onclick = async () => {
+$('connect').onclick = safe(async () => {
   await save({ username: $<HTMLInputElement>('username').value.trim() });
   await connectKick();
-};
-$('save-ids').onclick = async () => {
+});
+$('save-ids').onclick = safe(async () => {
   await save({ channelId: $<HTMLInputElement>('channelId').value.trim(), chatroomId: $<HTMLInputElement>('chatroomId').value.trim() });
   await connectKick();
-};
-$('test').onclick = () => api('/api/test', 'POST', { slot: 'main' });
-$('skip').onclick = () => api('/api/skip', 'POST');
-$('pause').onclick = () => api(paused ? '/api/resume' : '/api/pause', 'POST');
-$('search').oninput = () => loadUsers();
+});
+$('test').onclick = safe(() => api('/api/test', 'POST', { slot: 'main' }));
+$('skip').onclick = safe(() => api('/api/skip', 'POST'));
+$('pause').onclick = safe(() => api(paused ? '/api/resume' : '/api/pause', 'POST'));
+$('search').oninput = safe(() => loadUsers());
 
 function connectWs(): void {
   const ws = new WebSocket(`ws://${location.host}/ws?role=dashboard`);
@@ -170,4 +183,4 @@ async function init(): Promise<void> {
   setInterval(loadUsers, 15_000);
 }
 
-void init();
+init().catch(fail);

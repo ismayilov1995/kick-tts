@@ -39,6 +39,7 @@ export type SourceOptions = {
   chatroomId: string;
   onEvent: (channel: string, event: string, data: unknown) => void;
   onStatus: (s: SourceStatus) => void;
+  backoffMs?: number;
   creds?: () => Promise<Creds>;
   connect?: (url: string) => SocketLike;
 };
@@ -122,7 +123,7 @@ export class KickSource {
     this.ws = null;
     if (this.stopped) return;
     this.status('disconnected');
-    const delay = Math.min(30_000, 1000 * 2 ** this.attempt++);
+    const delay = Math.min(30_000, (this.o.backoffMs ?? 1000) * 2 ** this.attempt++);
     this.timer = setTimeout(() => {
       this.start().catch(() => this.reconnect());
     }, delay);

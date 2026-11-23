@@ -18,6 +18,7 @@ function setup() {
   const events: unknown[][] = [];
   const statuses: SourceStatus[] = [];
   const src = new KickSource({
+    backoffMs: 20,
     channelId: '668',
     chatroomId: '669',
     onEvent: (c, e, d) => events.push([c, e, d]),
@@ -75,11 +76,11 @@ test('reconnects after the server closes; stop() prevents it', async () => {
   await t.src.start();
   t.sockets[0].onclose?.();
   expect(t.statuses.at(-1)?.state).toBe('disconnected');
-  await Bun.sleep(1100);
+  await Bun.sleep(300);
   expect(t.sockets).toHaveLength(2);
   t.src.stop();
   expect(t.sockets[1].closed).toBe(true);
-  await Bun.sleep(1100);
+  await Bun.sleep(300);
   expect(t.sockets).toHaveLength(2);
 });
 

@@ -7,6 +7,7 @@ export class UnknownLog {
   constructor(private file: string, private perEvent = 5, private maxBytes = 5_000_000) {}
 
   write(event: string, channel: string, data: unknown): void {
+    if (!this.counts.has(event) && this.counts.size >= 500) return;
     const n = this.counts.get(event) ?? 0;
     if (n >= this.perEvent) return;
     this.counts.set(event, n + 1);

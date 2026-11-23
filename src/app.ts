@@ -118,6 +118,15 @@ export class App {
     }
     this.settings = next;
     saveSettings(this.settingsFile, next);
+    if (next.channelId !== prev.channelId || next.chatroomId !== prev.chatroomId) {
+      if (next.channelId && next.chatroomId) this.startSource();
+      else {
+        this.source?.stop();
+        this.source = null;
+        this.status = { state: 'disconnected' };
+        this.pushStatus();
+      }
+    }
     return next;
   }
 

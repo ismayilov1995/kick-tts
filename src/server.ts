@@ -19,7 +19,7 @@ function g<R extends Request>(fn: (req: R) => Response | Promise<Response>) {
   return (req: R, server: Server<WsData>) => (trusted(req, server.port) ? fn(req) : forbidden());
 }
 
-const id = (req: BunRequest<'/api/users/:id'> | BunRequest<'/api/users/:id/block'>) => decodeURIComponent(req.params.id);
+const id = (req: BunRequest<'/api/users/:id'> | BunRequest<'/api/users/:id/block'>) => req.params.id;
 
 export function startServer(app: App, port = 7777) {
   return Bun.serve({

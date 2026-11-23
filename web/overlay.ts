@@ -10,11 +10,19 @@ function connect(): void {
       const a = new Audio(msg.url);
       audio = a;
       let sent = false;
+      let timer = setTimeout(() => done(), 15_000);
       const done = () => {
         if (sent) return;
         sent = true;
+        clearTimeout(timer);
         cap.style.display = 'none';
         ws.send(JSON.stringify({ type: 'ended', id: msg.id }));
+      };
+      a.onloadedmetadata = () => {
+        if (Number.isFinite(a.duration) && !sent) {
+          clearTimeout(timer);
+          timer = setTimeout(() => done(), (a.duration + 5) * 1000);
+        }
       };
       a.onended = done;
       a.onerror = done;

@@ -77,3 +77,22 @@ test('unknown events are logged; unverified ones are logged and processed', () =
   expect(t.unknown).toEqual(['App\\Events\\StreamerIsLive', 'KicksGifted']);
   expect(t.queued.map((q) => q.u)).toEqual([{ text: 'Ali 50 KICK göndərdi', priority: 1, kind: 'kicks' }]);
 });
+
+test('a throwing responder never escapes handleRaw and the next event is handled', () => {
+  const t = setup({ readChat: true });
+  let boom = true;
+  const orig = t.store.record.bind(t.store);
+  (t.store as any).record = (e: any) => {
+    if (boom) { boom = false; throw new Error('x'); }
+    return orig(e);
+  };
+  (t.pipeline as any).d.direct = { respond: () => { throw new Error('bad'); } };
+  const raw = JSON.stringify({ content: 'hi', sender: { id: 101, username: 'Murad' } });
+  const orig2 = console.error; console.error = () => {};
+  try {
+    expect(() => t.pipeline.handleRaw('c', 'App\\Events\\ChatMessageEvent', raw)).not.toThrow();
+    (t.pipeline as any).d.direct = new DirectResponder(() => mergeSettings({ readChat: true }));
+    t.pipeline.handleRaw('c', 'App\\Events\\ChatMessageEvent', raw);
+  } finally { console.error = orig2; }
+  expect(t.queued).toHaveLength(1);
+});

@@ -43,10 +43,14 @@ export class Pipeline {
   constructor(private d: PipelineDeps) {}
 
   handleRaw(channel: string, event: string, data: unknown): void {
-    const parsed = parseData(data);
-    const e = normalize(event, parsed, this.d.channelKey());
-    if (!e || UNVERIFIED.has(shortName(event))) this.d.unknown.write(event, channel, parsed);
-    if (e) this.handle(e);
+    try {
+      const parsed = parseData(data);
+      const e = normalize(event, parsed, this.d.channelKey());
+      if (!e || UNVERIFIED.has(shortName(event))) this.d.unknown.write(event, channel, parsed);
+      if (e) this.handle(e);
+    } catch (err) {
+      console.error('[pipeline]', err);
+    }
   }
 
   handle(e: KickEvent): void {
