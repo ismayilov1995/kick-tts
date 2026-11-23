@@ -22,11 +22,28 @@ export function parseSayVoices(out: string): Voice[] {
   return voices;
 }
 
-export function parseWinVoices(out: string): Voice[] {
+export type WinEngine = 'winrt' | 'sapi';
+
+/** Parses `Name|lang` lines. Ids carry the engine prefix so the two Windows engines never collide. */
+export function parseWinVoices(out: string, engine: WinEngine): Voice[] {
   return out.split(/\r?\n/).flatMap((line) => {
     const [name, lang] = line.trim().split('|');
-    return name && lang ? [{ id: name, name, lang }] : [];
+    return name && lang ? [{ id: `${engine}:${name}`, name: engine === 'sapi' ? `${name} (SAPI)` : name, lang }] : [];
   });
+}
+
+/** '' means "engine default"; an unprefixed id (settings from older versions) is a SAPI name. */
+export function splitWinVoiceId(id: string): { engine: WinEngine; name: string } {
+  const m = id.match(/^(winrt|sapi):(.*)$/s);
+  if (m) return { engine: m[1] as WinEngine, name: m[2] };
+  return { engine: id ? 'sapi' : 'winrt', name: id };
+}
+
+/** SAPI voice to use when WinRT fails: one with the same language, else the SAPI default (''). */
+export function sapiFallback(voices: Voice[], voiceId: string): string {
+  const lang = voices.find((v) => v.id === voiceId)?.lang.slice(0, 2).toLowerCase();
+  const v = lang ? voices.find((x) => x.id.startsWith('sapi:') && x.lang.toLowerCase().startsWith(lang)) : undefined;
+  return v ? splitWinVoiceId(v.id).name : '';
 }
 
 export function pickDefaults(voices: Voice[]): { main: string; cyrillic: string } {
@@ -81,23 +98,64 @@ export class MacVoice implements VoiceEngine {
   }
 }
 
-const PS_LIST =
+const PS_SAPI_LIST =
   "[Console]::OutputEncoding=[Text.Encoding]::UTF8; Add-Type -AssemblyName System.Speech; (New-Object System.Speech.Synthesis.SpeechSynthesizer).GetInstalledVoices() | Where-Object { $_.Enabled } | ForEach-Object { $_.VoiceInfo.Name + '|' + $_.VoiceInfo.Culture.Name }";
 // Text is passed base64-encoded in an env var: no quoting issues, no injection, no console code-page problems.
-const PS_SPEAK =
+const PS_SAPI_SPEAK =
   'Add-Type -AssemblyName System.Speech; $s = New-Object System.Speech.Synthesis.SpeechSynthesizer; try { if ($env:KTTS_VOICE) { $s.SelectVoice($env:KTTS_VOICE) }; $s.SetOutputToWaveFile($env:KTTS_OUT); $s.Speak([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($env:KTTS_TEXT))) } finally { $s.Dispose() }';
+// WinRT sees OneCore voices (Settings → Speech → Add voices) that System.Speech cannot.
+const WINRT_SYNTH = '[Windows.Media.SpeechSynthesis.SpeechSynthesizer,Windows.Media.SpeechSynthesis,ContentType=WindowsRuntime]';
+const PS_WINRT_LIST = `[Console]::OutputEncoding=[Text.Encoding]::UTF8; ${WINRT_SYNTH}::AllVoices | ForEach-Object { $_.DisplayName + '|' + $_.Language }`;
+// Windows PowerShell 5.1 cannot await WinRT IAsyncOperation directly, so it goes through WindowsRuntimeSystemExtensions.AsTask.
+const PS_WINRT_SPEAK = [
+  "$ErrorActionPreference = 'Stop'",
+  'Add-Type -AssemblyName System.Runtime.WindowsRuntime',
+  "$asTask = [System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object { $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1' } | Select-Object -First 1",
+  '$await = { param($op, [Type]$t) $task = $asTask.MakeGenericMethod($t).Invoke($null, @($op)); $task.Wait(-1) | Out-Null; $task.Result }',
+  '[Windows.Storage.Streams.DataReader,Windows.Storage.Streams,ContentType=WindowsRuntime] | Out-Null',
+  `$s = ${WINRT_SYNTH}::new()`,
+  `if ($env:KTTS_VOICE) { $v = ${WINRT_SYNTH}::AllVoices | Where-Object { $_.DisplayName -eq $env:KTTS_VOICE } | Select-Object -First 1; if (-not $v) { throw "voice not found: $env:KTTS_VOICE" }; $s.Voice = $v }`,
+  '$stream = & $await ($s.SynthesizeTextToStreamAsync([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($env:KTTS_TEXT)))) ([Windows.Media.SpeechSynthesis.SpeechSynthesisStream])',
+  '$r = New-Object Windows.Storage.Streams.DataReader($stream.GetInputStreamAt(0))',
+  '& $await ($r.LoadAsync([uint32]$stream.Size)) ([uint32]) | Out-Null',
+  '$bytes = New-Object byte[] ([int]$stream.Size)',
+  '$r.ReadBytes($bytes)',
+  '[IO.File]::WriteAllBytes($env:KTTS_OUT, $bytes)',
+  '$r.Dispose(); $stream.Dispose(); $s.Dispose()',
+].join('; ');
 const ps = (script: string) => ['powershell.exe', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script];
 
 export class WinVoice implements VoiceEngine {
+  private voices: Voice[] = [];
+
+  constructor(private exec: typeof run = run) {}
+
+  /** WinRT (OneCore) voices first, then SAPI; either engine may be missing, but not both. */
   async listVoices(): Promise<Voice[]> {
-    return parseWinVoices(await run(ps(PS_LIST)));
+    const [winrt, sapi] = await Promise.allSettled([this.exec(ps(PS_WINRT_LIST)), this.exec(ps(PS_SAPI_LIST))]);
+    if (winrt.status === 'rejected' && sapi.status === 'rejected') throw sapi.reason;
+    if (winrt.status === 'rejected') console.error('[voice] WinRT list failed', winrt.reason);
+    this.voices = [
+      ...(winrt.status === 'fulfilled' ? parseWinVoices(winrt.value, 'winrt') : []),
+      ...(sapi.status === 'fulfilled' ? parseWinVoices(sapi.value, 'sapi') : []),
+    ];
+    return this.voices;
   }
 
   async synth(text: string, voiceId: string, outFile: string): Promise<void> {
+    const { engine, name } = splitWinVoiceId(voiceId);
+    const env = { KTTS_TEXT: Buffer.from(text, 'utf8').toString('base64'), KTTS_OUT: outFile };
     try {
-      await run(ps(PS_SPEAK), {
-        env: { KTTS_TEXT: Buffer.from(text, 'utf8').toString('base64'), KTTS_VOICE: voiceId, KTTS_OUT: outFile },
-      });
+      if (engine === 'winrt') {
+        try {
+          await this.exec(ps(PS_WINRT_SPEAK), { env: { ...env, KTTS_VOICE: name } });
+          return;
+        } catch (err) {
+          console.error('[voice] WinRT synth failed, using SAPI', err);
+          await rm(outFile, { force: true }).catch(() => {});
+        }
+      }
+      await this.exec(ps(PS_SAPI_SPEAK), { env: { ...env, KTTS_VOICE: engine === 'winrt' ? sapiFallback(this.voices, voiceId) : name } });
     } catch (err) {
       await rm(outFile, { force: true }).catch(() => {});
       throw err;

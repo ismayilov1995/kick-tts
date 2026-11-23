@@ -27,7 +27,7 @@ Pulsuzdur. Quraşdırma, hesab və ya açar tələb etmir.
 - Default olaraq **KICK hədiyyələri** və **channel points** oxunur. Bundan əlavə sadiqlik şablonları (səviyyə artımı, mesaj mərhələləri, ardıcıl günlər, geri qayıdış) də default olaraq açıqdır və chat tamaşaçıları üçün danışır. Chat-i və abunəlikləri "Nə oxunsun" bölməsində aç.
 - Səslər kompüterin öz səsləridir:
   - **macOS:** System Settings → Accessibility → Spoken Content → System Voice → Manage Voices… → Türkcə **Yelda** və rusca **Milena** səslərini yüklə.
-  - **Windows:** app System.Speech (SAPI) səslərindən istifadə edir. Settings → Speech → "Add voices" ilə əlavə olunan (OneCore) səslər görünməyə bilər. Bu versiyada Windows-da türkcə/azərbaycanca səslənən səsin olması zəmanətli deyil.
+  - **Windows:** Settings → Time & language → Speech → "Add voices" → **Türkçe (Türkiye)** səsini (**Microsoft Tolga**), kiril mətn üçün isə **Русский** səsini əlavə et. App bu (OneCore) səsləri birinci göstərir; köhnə System.Speech səsləri siyahıda "(SAPI)" ilə görünür. OneCore səsi işləməsə, app avtomatik eyni dildə SAPI səsinə keçir.
 - Yeni sistem səsi quraşdırdıqdan sonra paneldə **Test** düyməsini bas və ya app-i yenidən başlat.
 - Azərbaycan dilində sistem səsi yoxdur; Türkcə səs Azərbaycan mətnini ən yaxşı oxuyur.
 - Məlumatlar bu qovluqda saxlanılır:
