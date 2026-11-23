@@ -87,7 +87,8 @@ export class App {
     if (!this.settings.channelId || !this.settings.chatroomId) {
       const ids = await fetchChannelIds(this.settings.username);
       if (!ids) return { ok: false, needManual: true };
-      this.updateSettings(ids);
+      this.updateSettings(ids); // new ids → updateSettings starts the source
+      return { ok: true };
     }
     this.startSource();
     return { ok: true };
