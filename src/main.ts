@@ -18,22 +18,42 @@ function openBrowser(url: string): void {
   }
 }
 
-const dir = dataDir();
-const firstRun = !existsSync(join(dir, 'settings.json'));
-const app = new App(dir, createVoiceEngine());
+async function boot(): Promise<void> {
+  // Single instance: if something already answers on our port, just show its dashboard.
+  const running = await fetch(`http://127.0.0.1:${PORT}/api/state`, { headers: { host: `localhost:${PORT}` }, signal: AbortSignal.timeout(1000) }).then(
+    () => true,
+    () => false,
+  );
+  if (running) {
+    console.log('Kick TTS artıq işləyir, idarə paneli açılır…');
+    openBrowser(URL_);
+    process.exit(0);
+  }
+
+  const dir = dataDir();
+  const firstRun = !existsSync(join(dir, 'settings.json'));
+  const app = new App(dir, createVoiceEngine());
+
+  try {
+    startServer(app, PORT);
+  } catch (err) {
+    if ((err as { code?: string })?.code === 'EADDRINUSE') console.error(`${PORT} portu başqa proqram tərəfindən istifadə olunur. O proqramı bağla və yenidən aç.`);
+    else console.error(err);
+    throw new Error('Server başlamadı');
+  }
+
+  await app.init();
+  if (firstRun) {
+    app.updateSettings({}); // creates settings.json
+    openBrowser(URL_);
+  }
+  console.log(`Kick TTS işləyir.\nİdarə paneli: ${URL_}\nOBS overlay: ${URL_}overlay\nMəlumat qovluğu: ${dir}\nBu pəncərəni bağlama.`);
+}
 
 try {
-  startServer(app, PORT);
-} catch {
-  // Port taken: the app is already running. Show its dashboard instead of starting twice.
-  console.log('Kick TTS artıq işləyir, idarə paneli açılır…');
-  openBrowser(URL_);
-  process.exit(0);
+  await boot();
+} catch (err) {
+  console.error(err instanceof Error ? err.message : err);
+  if (process.platform === 'win32') prompt('Çıxmaq üçün Enter bas…'); // keep the console window readable
+  process.exit(1);
 }
-
-await app.init();
-if (firstRun) {
-  app.updateSettings({}); // creates settings.json
-  openBrowser(URL_);
-}
-console.log(`Kick TTS işləyir.\nİdarə paneli: ${URL_}\nOBS overlay: ${URL_}overlay\nMəlumat qovluğu: ${dir}\nBu pəncərəni bağlama.`);
