@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="az">
+<head>
+  <meta charset="utf-8">
+  <title>Kick TTS</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 0; background: #0f1115; color: #e8e8e8; }
+    header { display: flex; gap: 12px; align-items: center; padding: 12px 20px; background: #171a21; position: sticky; top: 0; }
+    h1 { font-size: 20px; margin: 0 12px 0 0; color: #53fc18; }
+    main { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 16px; padding: 16px 20px; }
+    section { background: #171a21; border-radius: 10px; padding: 14px 16px; }
+    section.wide { grid-column: 1 / -1; }
+    h2 { font-size: 16px; margin: 0 0 10px; }
+    label { display: block; margin: 6px 0; }
+    input:not([type=checkbox]), select, textarea { width: 100%; box-sizing: border-box; background: #0f1115; color: inherit; border: 1px solid #333; border-radius: 6px; padding: 6px; }
+    button { background: #53fc18; color: #000; border: 0; border-radius: 6px; padding: 7px 14px; font-weight: 600; cursor: pointer; }
+    button.danger { background: #ff4d4d; color: #fff; }
+    .pill { padding: 3px 10px; border-radius: 999px; font-size: 13px; }
+    .ok { background: #1f4d14; } .bad { background: #5c1a1a; }
+    .row { display: flex; gap: 8px; align-items: end; } .row label { flex: 1; }
+    fieldset { border: 1px solid #333; border-radius: 6px; margin: 8px 0; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; } td, th { padding: 4px 6px; text-align: left; } tr[data-user] { cursor: pointer; } tr[data-user]:hover { background: #222733; }
+    #log { list-style: none; padding: 0; margin: 0; max-height: 420px; overflow: auto; font-size: 13px; }
+    #log li { padding: 3px 0; border-bottom: 1px solid #222; } #log li span { color: #999; }
+    #log li.spoken span, #log li.queued span { color: #53fc18; } #log li.failed span, #log li.dropped span { color: #ff6b6b; }
+    .hint { color: #aaa; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Kick TTS</h1>
+    <span id="status" class="pill bad">Kick: qoşulmayıb</span>
+    <span id="overlay" class="pill bad">OBS overlay qoşulmayıb!</span>
+  </header>
+  <main>
+    <section>
+      <h2>Kanal</h2>
+      <div class="row"><label>Kick istifadəçi adın <input id="username" autocomplete="off"></label><button id="connect">Qoşul</button></div>
+      <div id="manual" hidden>
+        <p class="hint">Kick məlumatlarını avtomatik ala bilmədik. Bu linki brauzerdə aç: <a id="manual-link" target="_blank" rel="noreferrer"></a>.
+          Açılan səhifədə ən əvvəldəki <b>"id"</b> rəqəmini və <b>"chatroom"</b> içindəki <b>"id"</b> rəqəmini tap və bura yaz:</p>
+        <label>Kanal ID <input id="channelId" inputmode="numeric"></label>
+        <label>Chatroom ID <input id="chatroomId" inputmode="numeric"></label>
+        <button id="save-ids">Yadda saxla və qoşul</button>
+      </div>
+      <p class="hint">OBS-də Browser Source URL: <code>http://localhost:7777/overlay</code> — "Control audio via OBS" seç.</p>
+    </section>
+    <section>
+      <h2>İdarə</h2>
+      <button id="test">Test</button> <button id="skip">Keç</button> <button id="pause">Pauza</button>
+      <p id="queue" class="hint"></p>
+    </section>
+    <section>
+      <h2>Nə oxunsun</h2>
+      <label><input type="checkbox" data-key="readKicks"> KICK hədiyyələri</label>
+      <label><input type="checkbox" data-key="readRewards"> Channel points</label>
+      <label>Yalnız bu reward-lar (vergüllə; boş = hamısı) <input data-key="rewardAllowList"></label>
+      <label><input type="checkbox" data-key="readSubs"> Abunəliklər və hədiyyə abunələr</label>
+      <label><input type="checkbox" data-key="readChat"> Bütün chat</label>
+      <label><input type="checkbox" data-key="readUsername"> İstifadəçi adını da oxu</label>
+      <label><input type="checkbox" data-key="caption"> Oxunan mətni overlay-də göstər</label>
+      <label>Maksimum uzunluq <input type="number" min="20" max="500" data-key="maxLength"></label>
+      <label>Qadağan sözlər (vergüllə) <input data-key="bannedWords"></label>
+    </section>
+    <section>
+      <h2>Səslər</h2>
+      <div id="voices"></div>
+    </section>
+    <section>
+      <h2>Şablon cavablar</h2>
+      <p class="hint">Hər sətir bir variantdır. {user}, {level}, {n}, {streak}, {days} avtomatik doldurulur.</p>
+      <div id="templates"></div>
+    </section>
+    <section>
+      <h2>Sadiq tamaşaçılar</h2>
+      <input id="search" placeholder="Ad ilə axtar…">
+      <table id="users"></table>
+      <div id="profile"></div>
+    </section>
+    <section class="wide">
+      <h2>Canlı log</h2>
+      <ol id="log"></ol>
+    </section>
+  </main>
+  <script type="module" src="./dashboard.ts"></script>
+</body>
+</html>
