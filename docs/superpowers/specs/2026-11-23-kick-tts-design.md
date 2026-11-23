@@ -19,7 +19,8 @@ Kick streamerləri üçün pulsuz desktop app. Seçilmiş Kick event-lərini (KI
 
 | Versiya | Daxildir |
 |---|---|
-| **v1 (bu spec)** | Kick bağlantısı (Pusher), event-lərin oxunması, SQLite yaddaş və statistika, loyallıq balı + top siyahı, şablon cavablar, OBS overlay, OS + Piper səsləri |
+| **v1 (bu spec)** | Kick bağlantısı (Pusher), event-lərin oxunması, SQLite yaddaş və statistika, loyallıq balı + top siyahı, şablon cavablar, OBS overlay, OS səsləri |
+| v1.1 | Piper səsləri (sherpa-onnx). Ayrı spike + plan: CLI arxivləri 180–540 MB-dır, ona görə 16 MB-lıq `sherpa-onnx` WASM npm paketi `bun --compile` ilə yoxlanılacaq |
 | v2 | LLM Responder, overlay-də loyallıq leaderboard-u, tamaşaçının özü səs seçməsi (`!səs robot`), streamerin dəyişə bildiyi loyallıq çəkiləri, Türkcə UI |
 | v3 | RVC personaj səsləri, Pro abunə, könüllü bulud sinxronizasiyası |
 
@@ -41,7 +42,7 @@ Source (Kick Pusher)
 Hər qat ayrıca modul, ayrıca test olunur. Qatlar arasındakı interfeyslər:
 
 ```ts
-type Event = {
+type KickEvent = {   // DOM-un Event tipi ilə qarışmasın deyə KickEvent
   platform: 'kick'; channelId: string; userId: string; username: string;
   type: 'chat' | 'reward' | 'kicks' | 'sub' | 'giftsub';
   text?: string; amount?: number; rewardTitle?: string;
@@ -97,15 +98,13 @@ Sorğu alınmasa, ehtiyat: key `34bf7a0ff419a2a775b9`, cluster `us2`. Köhnə `3
 
 Tanınmayan və ya natamam parse olunan hər event xam şəkildə `unknown-events.log` faylına yazılır.
 
-**User ID:** sahədə ID varsa `kick:<id>` istifadə olunur. ID yoxdursa (məsələn, reward event-ində), `kick:name:<lowercase username>` götürülür. Eyni username-li sətir sonradan ID ilə gəlsə, birləşdirilir.
+**User ID:** sahədə ID varsa `kick:<id>` istifadə olunur. ID yoxdursa (məsələn, subscription event-lərində), əvvəlcə `users` cədvəlində eyni username-li, ID-si olan tamaşaçı axtarılır və onun ID-si götürülür. Tapılmasa `kick:name:<lowercase username>` istifadə olunur. Sətirlər sonradan birləşdirilmir (v1 sadəliyi).
 
 ## 5. Verilənlər bazası (SQLite, `bun:sqlite`)
 
-```sql
-channels(
-  id TEXT PRIMARY KEY,            -- 'kick:123'
-  slug TEXT, chatroom_id TEXT, settings_json TEXT, created_at INTEGER)
+Ayarlar (kanal ID-ləri, toggle-lar, səslər, şablon mətnləri) bazada yox, `settings.json` faylında saxlanılır. v1-də bir quraşdırma bir kanala xidmət edir, ona görə ayrıca `channels` cədvəlinə ehtiyac yoxdur.
 
+```sql
 users(
   id TEXT PRIMARY KEY,            -- 'kick:456'
   username TEXT, first_seen INTEGER, last_seen INTEGER)
@@ -197,7 +196,8 @@ Keçilən event-lər də DB-yə yazılır (statistika üçün), amma `spoken=0` 
 | `level_up` | səviyyə qalxanda | "{user} artıq {level} səviyyəsindədir!" | ON |
 | `spam` | 60 saniyədə 10-dan çox mesaj | "{user}, klaviaturanı bir az dincə burax 😄" | OFF |
 
-- Hər trigger üçün bir neçə variant olur, təsadüfi biri seçilir. Mətnlər dashboard-da redaktə olunur və `settings_json`-da saxlanılır.
+- Hər trigger üçün bir neçə variant olur, təsadüfi biri seçilir. Mətnlər dashboard-da redaktə olunur və `settings.json`-da saxlanılır.
+- Şablon mətnlərində `{user}`-dən sonra şəkilçi yazılmır ("{user}-in" yox), çünki şəkilçi addan asılı olaraq dəyişir.
 - **Limitlər:** hər tamaşaçıya bir trigger üçün sessiya ərzində 1 dəfə (sessiya = app-in açıq olduğu müddət). Bütün şablonlar üçün ümumi limit 30 saniyədə 1 dəfə.
 - Şablonlar "Bütün chat" toggle-ı OFF olanda da işləyir. Blok edilmiş tamaşaçılar və botlar üçün işləmir.
 - Şablon cümlələri `priority: 2`, səs yuvası `announcer`.
@@ -208,7 +208,7 @@ Keçilən event-lər də DB-yə yazılır (statistika üçün), amma `spoken=0` 
   - macOS: `say -v <voice> --file-format=WAVE --data-format=LEI16@22050 -o out.wav "text"`. Səs siyahısı `say -v '?'` ilə alınır.
   - Windows: PowerShell + `System.Speech.Synthesis.SpeechSynthesizer`, `SetOutputToWaveFile`. Səs siyahısı `GetInstalledVoices()` ilə alınır.
   - Mətn shell-ə heç vaxt string kimi qoşulmur: arqument massivi və ya stdin istifadə olunur (injection-a qarşı).
-- **PiperVoice:** sherpa-onnx CLI (`sherpa-onnx-offline-tts`, Apache 2.0) + Piper VITS modelləri. Binary və model dashboard-dakı "Yüklə" düyməsi ilə app data qovluğuna endirilir. Orijinal `rhasspy/piper` arxivləşib, `piper1-gpl` GPL lisenziyalıdır, ona görə istifadə edilmir.
+- **PiperVoice — v1.1-ə keçirildi.** sherpa-onnx CLI arxivləri (macOS 537 MB, Windows ~180 MB) istifadəçiyə endirmək üçün çox böyükdür. v1.1 spike-ı 16 MB-lıq `sherpa-onnx` WASM npm paketini yoxlayacaq. Türkcə modellər mövcuddur (`vits-piper-tr_TR-{fahrettin,fettah,dfki}-medium`, sherpa-onnx `tts-models` release). Orijinal `rhasspy/piper` arxivləşib, `piper1-gpl` GPL lisenziyalıdır, ona görə istifadə edilmir.
 - **Səs yuvaları:**
   - `main`: default Türkcə OS səsi (Yelda/Tolga), yoxdursa ilk mövcud səs
   - `cyrillic`: mətndə `/[а-яё]/i` varsa istifadə olunur; default rus səsi (Milena/Irina)
@@ -220,7 +220,8 @@ Keçilən event-lər də DB-yə yazılır (statistika üçün), amma `spoken=0` 
 
 - Prioritet növbəsi: 1 = KICK / reward / sub, 2 = şablon, 3 = chat. Eyni prioritet daxilində FIFO.
 - Maksimum 15 element gözləyir. Növbə dolanda əvvəl ən köhnə 3-cü prioritetli element atılır, sonra 2-ci. Prioritet 1 heç vaxt atılmır (15 limitinə daxil deyil).
-- Bir element oxunarkən növbəti element əvvəlcədən sintez olunur.
+- Əvvəlcədən sintez (prefetch) v1-də yoxdur: OS səsi qısa mətni ~0.3 saniyəyə yaradır. Real yayımda boşluq hiss olunsa əlavə olunacaq.
+- Overlay 60 saniyə ərzində "ended" göndərməsə, element bitmiş sayılır (növbə ilişib qalmasın).
 - Dashboard düymələri: **Keç** (cari səsi dayandırır), **Pauza / Davam**, **Test** (nümunə cümləni overlay-dən oxudur).
 
 ## 11. OBS overlay (`/overlay`)
@@ -233,18 +234,19 @@ Keçilən event-lər də DB-yə yazılır (statistika üçün), amma `spoken=0` 
 
 ## 12. Dashboard (`http://localhost:7777/`)
 
-- UI Azərbaycan dilindədir. Bütün mətnlər bir faylda saxlanılır (`i18n/az.ts`), Türkcə tərcümə v2-də əlavə olunacaq.
+- UI Azərbaycan dilindədir. UI mətnləri `web/dashboard.html` və `web/dashboard.ts`-dədir. Türkcə tərcümə v2-də gələndə ayrıca fayla çıxarılacaq.
 - Bölmələr:
   - bağlantı statusu (Pusher və overlay)
   - kanal quraşdırması (username, ehtiyat ID sahələri)
   - toggle-lar və filtrlər
-  - səs yuvaları + "dinlə" düyməsi + Piper "Yüklə" düyməsi
+  - səs yuvaları + "dinlə" düyməsi (Piper "Yüklə" düyməsi v1.1-də)
   - şablon redaktoru
   - loyallıq: top 20, tamaşaçı axtarışı, profil (statistika, son mesajlar), blok, "məlumatı sil"
   - canlı log (son 100 event: oxundu / keçildi + səbəb)
 - Dashboard canlı yenilənmə üçün eyni WebSocket serverinə qoşulur.
 - Texnologiya: `Bun.serve` + HTML imports, sadə TypeScript, framework yoxdur.
 - Server yalnız `127.0.0.1`-də dinləyir (şəbəkədən əlçatan deyil).
+- Hər API və WebSocket sorğusunda `Host` və `Origin` yoxlanılır: yalnız `localhost:7777` / `127.0.0.1:7777` qəbul olunur. Bu, brauzerdə açıq başqa saytın lokal API-ni çağırmasının (CSRF, DNS rebinding) qarşısını alır.
 
 ## 13. Paylanma və işə salma
 
