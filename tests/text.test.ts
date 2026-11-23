@@ -11,4 +11,9 @@ test('detects cyrillic', () => {
   expect(hasCyrillic('привет')).toBe(true);
   expect(hasCyrillic('Salam, ə ğ ş')).toBe(false);
 });
-test('csv lowercases and drops blanks', () => expect(csv(' Su iç, ,MAHNI ')).toEqual(['su iç', 'mahni']));
+test('csv lowercases and drops blanks', () => expect(csv(' Su iç, ,MAHNI ')).toEqual(['su iç', 'mahnı']));
+test('link inside non-ASCII text is removed whole', () => expect(cleanText('bax gəldim.me indi', 200)).toBe('bax indi'));
+test('plain non-ASCII text untouched', () => expect(cleanText('çox gözəl', 200)).toBe('çox gözəl'));
+test('cyrillic variants', () => {
+  for (const w of ['ПРИВЕТ', 'ёлка', 'ґанок', 'әлифба']) expect(hasCyrillic(w)).toBe(true);
+});

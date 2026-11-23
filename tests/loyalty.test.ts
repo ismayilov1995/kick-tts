@@ -34,3 +34,8 @@ test('gap resets streak', () => {
 test('month boundary', () => {
   expect(advanceDay({ ...prev, lastActiveDay: '2026-11-30' }, '2026-12-01').streak).toBe(5);
 });
+test('earlier day is ignored', () => expect(advanceDay(prev, '2026-11-22')).toEqual(prev));
+test('levelFor never throws on NaN or negative', () => {
+  expect(levelFor(NaN)).toBe('🌱 Yeni');
+  expect(levelFor(-5)).toBe('🌱 Yeni');
+});

@@ -27,7 +27,7 @@ export function computeScore(s: Stats): number {
 }
 
 export function levelFor(score: number): string {
-  return LEVELS.find(([min]) => score >= min)![1];
+  return LEVELS.find(([min]) => score >= min)?.[1] ?? LEVELS[LEVELS.length - 1][1];
 }
 
 /** Local calendar day, 'YYYY-MM-DD'. */
@@ -44,7 +44,7 @@ function prevDayKey(key: string): string {
 export type DayState = { lastActiveDay: string | null; streak: number; daysActive: number; msgsToday: number };
 
 export function advanceDay(prev: DayState, today: string): DayState {
-  if (prev.lastActiveDay === today) return prev;
+  if (prev.lastActiveDay !== null && today <= prev.lastActiveDay) return prev;
   const streak = prev.lastActiveDay === prevDayKey(today) ? prev.streak + 1 : 1;
   return { lastActiveDay: today, streak, daysActive: prev.daysActive + 1, msgsToday: 0 };
 }
