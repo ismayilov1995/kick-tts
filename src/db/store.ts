@@ -88,14 +88,14 @@ export class Store {
 
       this.db
         .query(`INSERT INTO users (id, username, first_seen, last_seen) VALUES (?, ?, ?, ?)
-          ON CONFLICT(id) DO UPDATE SET username = excluded.username, last_seen = excluded.last_seen`)
+          ON CONFLICT(id) DO UPDATE SET username = excluded.username, last_seen = max(users.last_seen, excluded.last_seen)`)
         .run(e.userId, e.username, e.ts, e.ts);
       this.db
         .query(`INSERT OR REPLACE INTO channel_users (channel_id, user_id, msg_count, msgs_today, counted_msgs, days_active,
           streak, last_active_day, kicks_total, subs, gift_subs, redemptions, score, level, blocked, first_seen, last_seen)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
         .run(e.channelId, e.userId, msgCount, msgsToday, stats.countedMsgs, stats.daysActive, stats.streak,
-          day.lastActiveDay, stats.kicksTotal, stats.subs, stats.giftSubs, stats.redemptions, score, level, blocked, firstSeen, e.ts);
+          day.lastActiveDay, stats.kicksTotal, stats.subs, stats.giftSubs, stats.redemptions, score, level, blocked, firstSeen, Math.max(before?.last_seen ?? 0, e.ts));
       const res = this.db
         .query('INSERT INTO events (channel_id, user_id, type, text, amount, raw_json, ts) VALUES (?, ?, ?, ?, ?, ?, ?)')
         .run(e.channelId, e.userId, e.type, e.text ?? e.rewardTitle ?? null, e.amount ?? null, JSON.stringify(e.raw ?? null), e.ts);
@@ -159,9 +159,13 @@ export class Store {
   /** "Məlumatı sil": removes the viewer from this channel, and entirely if no other channel knows them. */
   deleteUser(channelId: string, userId: string): void {
     this.db.transaction(() => {
-      this.db.query('DELETE FROM events WHERE channel_id = ? AND user_id = ?').run(channelId, userId);
-      this.db.query('DELETE FROM channel_users WHERE channel_id = ? AND user_id = ?').run(channelId, userId);
-      this.db.query('DELETE FROM users WHERE id = ? AND NOT EXISTS (SELECT 1 FROM channel_users WHERE user_id = ?)').run(userId, userId);
+      const name = this.db.query<{ username: string }, [string]>('SELECT username FROM users WHERE id = ?').get(userId)?.username;
+      const ids = name ? [userId, `kick:name:${name.toLowerCase()}`] : [userId];
+      for (const id of ids) {
+        this.db.query('DELETE FROM events WHERE channel_id = ? AND user_id = ?').run(channelId, id);
+        this.db.query('DELETE FROM channel_users WHERE channel_id = ? AND user_id = ?').run(channelId, id);
+        this.db.query('DELETE FROM users WHERE id = ? AND NOT EXISTS (SELECT 1 FROM channel_users WHERE user_id = ?)').run(id, id);
+      }
     })();
   }
 

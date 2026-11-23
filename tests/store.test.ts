@@ -123,3 +123,21 @@ describe('Store queries', () => {
     expect(s.db.query('SELECT raw_json FROM events ORDER BY id').all()).toEqual([{ raw_json: null }, { raw_json: '{"b":2}' }]);
   });
 });
+
+describe('Store hardening', () => {
+  test('out-of-order old events never move last_seen backward', () => {
+    const s = new Store();
+    s.record(makeEvent());
+    s.record(makeEvent({ ts: T0 - 8 * DAY }));
+    expect(s.record(makeEvent({ ts: T0 + 1000 })).ctx.prev?.lastSeen).toBe(T0);
+  });
+
+  test('deleteUser also removes the name alias', () => {
+    const s = new Store();
+    s.record(makeEvent({ type: 'sub', userId: 'kick:name:murad', username: 'Murad', text: undefined }));
+    s.record(makeEvent());
+    s.deleteUser(CH, 'kick:101');
+    expect(s.db.query("SELECT count(*) AS n FROM events WHERE user_id IN ('kick:101','kick:name:murad')").get()).toEqual({ n: 0 });
+    expect(s.db.query("SELECT count(*) AS n FROM users WHERE id IN ('kick:101','kick:name:murad')").get()).toEqual({ n: 0 });
+  });
+});

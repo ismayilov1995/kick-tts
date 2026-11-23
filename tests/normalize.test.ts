@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { normalize, parseData, shortName, UNVERIFIED } from '../src/kick/normalize';
+import { normalize, parseData, shortName, UNVERIFIED, userKey } from '../src/kick/normalize';
 
 const CH = 'kick:668';
 
@@ -57,4 +57,17 @@ test('parseData handles double-encoded JSON', () => {
 test('shortName and UNVERIFIED', () => {
   expect(shortName('App\\Events\\ChatMessageEvent')).toBe('ChatMessageEvent');
   expect(UNVERIFIED.has('KicksGifted')).toBe(true);
+});
+
+test('userKey accepts only safe non-negative integer ids', () => {
+  expect(userKey('0x1F', 'A')).toBe('kick:name:a');
+  expect(userKey(-5, 'A')).toBe('kick:name:a');
+  expect(userKey('42', 'A')).toBe('kick:42');
+});
+
+test('hostile amounts are rejected or clamped', () => {
+  const neg = normalize('KicksGifted', { sender: { id: 1, username: 'A' }, gift: { amount: -5 } }, CH);
+  expect(neg?.amount).toBeUndefined();
+  expect(normalize('KicksGifted', { sender: { id: 1, username: 'A' }, gift: { amount: 1e12 } }, CH)?.amount).toBe(1_000_000);
+  expect(normalize('App\\Events\\GiftedSubscriptionsEvent', { gifter_username: 'K', quantity: 1e9 }, CH)?.amount).toBe(1000);
 });
