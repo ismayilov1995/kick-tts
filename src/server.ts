@@ -34,7 +34,7 @@ export function startServer(app: App, port = 7777) {
       '/api/test': {
         POST: g(async (req) => {
           const b: any = await req.json().catch(() => ({}));
-          app.test(['main', 'cyrillic', 'announcer'].includes(b?.slot) ? b.slot : 'main');
+          await app.test(['main', 'cyrillic', 'announcer'].includes(b?.slot) ? b.slot : 'main');
           return noContent();
         }),
       },

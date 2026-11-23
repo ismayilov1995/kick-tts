@@ -28,6 +28,7 @@ export class App {
   private status: SourceStatus = { state: 'disconnected' };
   private queue = new SpeechQueue(15);
   private source: KickSource | null = null;
+  private sourceIds = '';
   private overlays = new Set<Sock>();
   private dashboards = new Set<Sock>();
   private logRing: LogEntry[] = [];
@@ -42,7 +43,10 @@ export class App {
       (item) => this.synth(item),
       {
         connected: () => this.overlays.size > 0,
-        play: (p) => this.toOverlays({ type: 'play', id: p.id, url: `/audio/${p.id}`, text: p.text, caption: this.settings.caption }),
+        play: (p) => {
+          this.toOverlays({ type: 'play', id: p.id, url: `/audio/${p.id}`, text: p.text, caption: this.settings.caption });
+          this.pushStatus();
+        },
         stop: () => this.toOverlays({ type: 'stop' }),
       },
       (item, result, reason) => this.onDone(item, result, reason),
@@ -90,12 +94,14 @@ export class App {
       this.updateSettings(ids); // new ids → updateSettings starts the source
       return { ok: true };
     }
-    this.startSource();
+    const running = this.source && this.sourceIds === `${this.settings.channelId}:${this.settings.chatroomId}` && this.status.state !== 'disconnected';
+    if (!running) this.startSource();
     return { ok: true };
   }
 
   private startSource(): void {
     this.source?.stop();
+    this.sourceIds = `${this.settings.channelId}:${this.settings.chatroomId}`;
     this.source = new KickSource({
       channelId: this.settings.channelId,
       chatroomId: this.settings.chatroomId,
@@ -105,7 +111,11 @@ export class App {
         this.pushStatus();
       },
     });
-    void this.source.start();
+    this.source.start().catch((err) => {
+      console.error('[kick]', err);
+      this.status = { state: 'disconnected' };
+      this.pushStatus();
+    });
   }
 
   updateSettings(patch: unknown): Settings {
@@ -117,8 +127,8 @@ export class App {
       next.channelId = '';
       next.chatroomId = '';
     }
+    saveSettings(this.settingsFile, next); // save first: a failed save must not leave a live unsaved change
     this.settings = next;
-    saveSettings(this.settingsFile, next);
     if (next.channelId !== prev.channelId || next.chatroomId !== prev.chatroomId) {
       if (next.channelId && next.chatroomId) this.startSource();
       else {
@@ -144,7 +154,9 @@ export class App {
     this.pushStatus();
   }
 
-  test(slot: VoiceSlot = 'main'): void {
+  async test(slot: VoiceSlot = 'main'): Promise<void> {
+    // Re-list so a freshly installed OS voice shows up without a restart.
+    this.voices = await this.engine.listVoices().catch(() => this.voices);
     const text = slot === 'cyrillic' ? 'Привет! Это тестовое сообщение.' : 'Salam! Bu, Kick TTS sınaq mesajıdır.';
     this.say({ text, voice: slot, priority: 1, kind: 'test' }, 'Test');
   }
