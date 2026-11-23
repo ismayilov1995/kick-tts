@@ -20,7 +20,7 @@ export async function getPusherCreds(fetchFn: typeof fetch = fetch): Promise<Cre
     });
     const json: any = await res.json();
     const c = json?.data?.connections?.find((x: any) => x?.provider === 'pusher')?.credentials;
-    if (typeof c?.app_key === 'string' && typeof c?.cluster === 'string') return { key: c.app_key, cluster: c.cluster, fallback: false };
+    if (/^[A-Za-z0-9]+$/.test(c?.app_key) && /^[a-z0-9-]+$/.test(c?.cluster)) return { key: c.app_key, cluster: c.cluster, fallback: false };
   } catch {
     // fall through to the fallback key
   }
@@ -42,6 +42,8 @@ export type SourceOptions = {
   backoffMs?: number;
   creds?: () => Promise<Creds>;
   connect?: (url: string) => SocketLike;
+  /** Silent-socket watchdog: check interval, ping after, reconnect after (ms). */
+  watchdog?: { checkMs: number; pingMs: number; deadMs: number };
 };
 
 const safeJson = (s: string): unknown => {
@@ -59,6 +61,8 @@ export class KickSource {
   private fallback = false;
   private state: SourceStatus['state'] = 'disconnected';
   private timer: ReturnType<typeof setTimeout> | undefined;
+  private watch: ReturnType<typeof setInterval> | undefined;
+  private lastFrame = Date.now();
 
   constructor(private o: SourceOptions) {}
 
@@ -71,7 +75,12 @@ export class KickSource {
     const url = `wss://ws-${cluster}.pusher.com/app/${key}?protocol=7&client=js&version=8.4.0&flash=false`;
     const ws = (this.o.connect ?? ((u: string) => new WebSocket(u) as unknown as SocketLike))(url);
     this.ws = ws;
-    ws.onmessage = (m) => this.handle(String(m.data));
+    this.lastFrame = Date.now();
+    this.startWatchdog();
+    ws.onmessage = (m) => {
+      this.lastFrame = Date.now();
+      this.handle(String(m.data));
+    };
     ws.onerror = () => {}; // onclose follows and reconnects
     ws.onclose = () => {
       if (this.ws === ws) this.reconnect();
@@ -81,9 +90,28 @@ export class KickSource {
   stop(): void {
     this.stopped = true;
     clearTimeout(this.timer);
+    clearInterval(this.watch);
     const ws = this.ws;
     this.ws = null;
     ws?.close();
+  }
+
+  // A half-dead TCP connection never fires onclose, so ping, then force a reconnect.
+  private startWatchdog(): void {
+    clearInterval(this.watch);
+    const { checkMs, pingMs, deadMs } = this.o.watchdog ?? { checkMs: 30_000, pingMs: 120_000, deadMs: 150_000 };
+    this.watch = setInterval(() => {
+      const silent = Date.now() - this.lastFrame;
+      if (silent > deadMs) {
+        const old = this.ws;
+        this.ws = null;
+        old?.close();
+        this.reconnect();
+      } else if (silent > pingMs) {
+        this.send({ event: 'pusher:ping', data: {} });
+      }
+    }, checkMs);
+    (this.watch as unknown as { unref?: () => void }).unref?.();
   }
 
   private handle(raw: string): void {
@@ -121,6 +149,7 @@ export class KickSource {
 
   private reconnect(): void {
     this.ws = null;
+    clearInterval(this.watch);
     if (this.stopped) return;
     this.status('disconnected');
     const delay = Math.min(30_000, (this.o.backoffMs ?? 1000) * 2 ** this.attempt++);

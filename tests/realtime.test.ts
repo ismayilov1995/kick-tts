@@ -12,13 +12,14 @@ class FakeSocket implements SocketLike {
   emit(msg: unknown) { this.onmessage?.({ data: JSON.stringify(msg) }); }
 }
 
-function setup() {
+function setup(watchdog?: { checkMs: number; pingMs: number; deadMs: number }) {
   const sockets: FakeSocket[] = [];
   const urls: string[] = [];
   const events: unknown[][] = [];
   const statuses: SourceStatus[] = [];
   const src = new KickSource({
     backoffMs: 20,
+    watchdog,
     channelId: '668',
     chatroomId: '669',
     onEvent: (c, e, d) => events.push([c, e, d]),
@@ -95,4 +96,21 @@ test('credentials fall back on error or bad shape', async () => {
   const boom = (async () => { throw new Error('offline'); }) as unknown as typeof fetch;
   expect(await getPusherCreds(boom)).toEqual({ ...FALLBACK, fallback: true });
   expect(await getPusherCreds(fetchOf({ data: {} }))).toEqual({ ...FALLBACK, fallback: true });
+});
+
+test('silent socket: pings, then reconnects', async () => {
+  const t = setup({ checkMs: 10, pingMs: 40, deadMs: 90 });
+  await t.src.start();
+  await Bun.sleep(70);
+  expect(t.sockets[0].sent).toContainEqual({ event: 'pusher:ping', data: {} });
+  await Bun.sleep(200);
+  expect(t.sockets).toHaveLength(2);
+  expect(t.sockets[0].closed).toBe(true);
+  t.src.stop();
+});
+
+test('credentials fall back on malformed cluster or key', async () => {
+  const bad = (cluster: string, key = 'abc') => fetchOf({ data: { connections: [{ provider: 'pusher', credentials: { app_key: key, cluster } }] } });
+  expect(await getPusherCreds(bad('evil.com/x'))).toEqual({ ...FALLBACK, fallback: true });
+  expect(await getPusherCreds(bad('eu', 'a b'))).toEqual({ ...FALLBACK, fallback: true });
 });
