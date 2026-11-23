@@ -1,3 +1,4 @@
+import { rm } from 'node:fs/promises';
 import type { Settings } from '../settings';
 import type { VoiceSlot } from '../types';
 import { hasCyrillic } from '../text';
@@ -36,21 +37,28 @@ export function pickDefaults(voices: Voice[]): { main: string; cyrillic: string 
 
 export function voiceFor(slot: VoiceSlot | undefined, text: string, s: Pick<Settings, 'voices'>, voices: Voice[]): string {
   const auto = pickDefaults(voices);
-  const main = s.voices.main || auto.main;
-  if (slot === 'announcer') return s.voices.announcer || main;
-  if (slot === 'cyrillic' || hasCyrillic(text)) return s.voices.cyrillic || auto.cyrillic;
+  const ok = (id: string) => (id && voices.some((v) => v.id === id) ? id : ''); // a voice that is no longer installed falls back to auto
+  const main = ok(s.voices.main) || auto.main;
+  if (slot === 'announcer') return ok(s.voices.announcer) || main;
+  if (slot === 'cyrillic' || hasCyrillic(text)) return ok(s.voices.cyrillic) || auto.cyrillic;
   return main;
 }
 
 /** Runs a command without a shell. Text never becomes part of a command line string. */
-async function run(cmd: string[], opts: { stdin?: Response; env?: Record<string, string> } = {}): Promise<string> {
+export async function run(cmd: string[], opts: { stdin?: Response; env?: Record<string, string>; timeoutMs?: number } = {}): Promise<string> {
   const p = Bun.spawn(cmd, {
     stdin: opts.stdin ?? 'ignore',
     stdout: 'pipe',
     stderr: 'pipe',
     env: opts.env ? { ...process.env, ...opts.env } : undefined,
   });
-  const [out, err, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    p.kill();
+  }, opts.timeoutMs ?? 30_000);
+  const [out, err, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]).finally(() => clearTimeout(timer));
+  if (timedOut) throw new Error(`${cmd[0]} timed out`);
   if (code !== 0) throw new Error(`${cmd[0]} exit ${code}: ${err.trim()}`);
   return out;
 }
@@ -62,17 +70,22 @@ export class MacVoice implements VoiceEngine {
 
   async synth(text: string, voiceId: string, outFile: string): Promise<void> {
     // Text goes through stdin (-f -), so a message starting with "-" is never read as a flag.
-    await run(['say', ...(voiceId ? ['-v', voiceId] : []), '--file-format=WAVE', '--data-format=LEI16@22050', '-o', outFile, '-f', '-'], {
-      stdin: new Response(text),
-    });
+    try {
+      await run(['say', ...(voiceId ? ['-v', voiceId] : []), '--file-format=WAVE', '--data-format=LEI16@22050', '-o', outFile, '-f', '-'], {
+        stdin: new Response(text),
+      });
+    } catch (err) {
+      await rm(outFile, { force: true }).catch(() => {});
+      throw err;
+    }
   }
 }
 
 const PS_LIST =
-  "Add-Type -AssemblyName System.Speech; (New-Object System.Speech.Synthesis.SpeechSynthesizer).GetInstalledVoices() | Where-Object { $_.Enabled } | ForEach-Object { $_.VoiceInfo.Name + '|' + $_.VoiceInfo.Culture.Name }";
+  "[Console]::OutputEncoding=[Text.Encoding]::UTF8; Add-Type -AssemblyName System.Speech; (New-Object System.Speech.Synthesis.SpeechSynthesizer).GetInstalledVoices() | Where-Object { $_.Enabled } | ForEach-Object { $_.VoiceInfo.Name + '|' + $_.VoiceInfo.Culture.Name }";
 // Text is passed base64-encoded in an env var: no quoting issues, no injection, no console code-page problems.
 const PS_SPEAK =
-  'Add-Type -AssemblyName System.Speech; $s = New-Object System.Speech.Synthesis.SpeechSynthesizer; if ($env:KTTS_VOICE) { $s.SelectVoice($env:KTTS_VOICE) }; $s.SetOutputToWaveFile($env:KTTS_OUT); $s.Speak([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($env:KTTS_TEXT))); $s.Dispose()';
+  'Add-Type -AssemblyName System.Speech; $s = New-Object System.Speech.Synthesis.SpeechSynthesizer; try { if ($env:KTTS_VOICE) { $s.SelectVoice($env:KTTS_VOICE) }; $s.SetOutputToWaveFile($env:KTTS_OUT); $s.Speak([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($env:KTTS_TEXT))) } finally { $s.Dispose() }';
 const ps = (script: string) => ['powershell.exe', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script];
 
 export class WinVoice implements VoiceEngine {
@@ -81,9 +94,14 @@ export class WinVoice implements VoiceEngine {
   }
 
   async synth(text: string, voiceId: string, outFile: string): Promise<void> {
-    await run(ps(PS_SPEAK), {
-      env: { KTTS_TEXT: Buffer.from(text, 'utf8').toString('base64'), KTTS_VOICE: voiceId, KTTS_OUT: outFile },
-    });
+    try {
+      await run(ps(PS_SPEAK), {
+        env: { KTTS_TEXT: Buffer.from(text, 'utf8').toString('base64'), KTTS_VOICE: voiceId, KTTS_OUT: outFile },
+      });
+    } catch (err) {
+      await rm(outFile, { force: true }).catch(() => {});
+      throw err;
+    }
   }
 }
 

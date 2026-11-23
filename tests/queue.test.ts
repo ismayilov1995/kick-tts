@@ -15,7 +15,7 @@ test('over the limit drops the oldest chat first', () => {
   const q = new SpeechQueue(2);
   q.push(item('c1'));
   q.push(item('t1', 2));
-  expect(q.push(item('c2'))?.id).toBe('c1');
+  expect(q.push(item('c2')).map((i) => i.id)).toEqual(['c1']);
   expect(q.size).toBe(2);
 });
 
@@ -23,12 +23,12 @@ test('then the oldest template', () => {
   const q = new SpeechQueue(2);
   q.push(item('t1', 2));
   q.push(item('t2', 2));
-  expect(q.push(item('t3', 2))?.id).toBe('t1');
+  expect(q.push(item('t3', 2)).map((i) => i.id)).toEqual(['t1']);
 });
 
 test('paid events never count toward the limit and are never dropped', () => {
   const q = new SpeechQueue(2);
-  for (let i = 0; i < 5; i++) expect(q.push(item(`k${i}`, 1))).toBeNull();
+  for (let i = 0; i < 5; i++) expect(q.push(item(`k${i}`, 1))).toEqual([]);
   expect(q.size).toBe(5);
 });
 
@@ -37,4 +37,13 @@ test('unshift puts an item back at the front of its priority', () => {
   q.push(item('c1'));
   q.unshift(item('c0'));
   expect(q.next()?.id).toBe('c0');
+});
+
+test('cap holds after unshift put-backs', () => {
+  const q = new SpeechQueue(2);
+  q.push(item('c1'));
+  q.push(item('c2'));
+  q.unshift(item('c0'));
+  q.push(item('c3'));
+  expect(q.size).toBe(2);
 });

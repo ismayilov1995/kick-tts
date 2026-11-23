@@ -9,6 +9,6 @@ export const csv = (s: string): string[] =>
 
 /** Removes emotes and links, shortens "aaaaaa" to "aaa", collapses spaces, cuts to maxLength code points. */
 export function cleanText(input: string, maxLength: number): string {
-  const s = input.replace(EMOTE, ' ').replace(LINK, ' ').replace(REPEAT, '$1$1$1').replace(/\s+/g, ' ').trim();
+  const s = input.normalize('NFKC').replace(/\p{Cf}/gu, '').replace(EMOTE, ' ').replace(LINK, ' ').replace(REPEAT, '$1$1$1').replace(/\s+/g, ' ').trim();
   return [...s].slice(0, maxLength).join('').trim();
 }

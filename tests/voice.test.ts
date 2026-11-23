@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { MacVoice, parseSayVoices, parseWinVoices, pickDefaults, voiceFor } from '../src/voice/os';
+import { MacVoice, run, parseSayVoices, parseWinVoices, pickDefaults, voiceFor } from '../src/voice/os';
 import { mergeSettings } from '../src/settings';
 
 const SAY = [
@@ -47,4 +47,12 @@ test.skipIf(process.platform !== 'darwin')('macOS say writes a WAV file', async 
   const bytes = new Uint8Array(await Bun.file(out).arrayBuffer());
   expect(new TextDecoder().decode(bytes.slice(0, 4))).toBe('RIFF');
   expect(bytes.length).toBeGreaterThan(1000);
+});
+
+test('voiceFor ignores a configured voice that is not installed', () => {
+  expect(voiceFor(undefined, 'salam', mergeSettings({ voices: { main: 'Gone' } }), parseSayVoices(SAY))).toBe('Yelda (Turkish (Türkiye))');
+});
+
+test('run kills a hung command and rejects', async () => {
+  await expect(run(['sleep', '5'], { timeoutMs: 100 })).rejects.toThrow('timed out');
 });

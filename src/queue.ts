@@ -17,15 +17,16 @@ export class SpeechQueue {
     return this.items.length;
   }
 
-  /** Adds an item; returns the one dropped to stay under the limit. Priority 1 is never counted or dropped. */
-  push(item: QueueItem): QueueItem | null {
+  /** Adds an item; returns the items dropped to stay under the limit (oldest chat, then oldest template). Priority 1 is never counted or dropped. */
+  push(item: QueueItem): QueueItem[] {
     this.items.push(item);
-    if (this.items.filter((i) => i.priority !== 1).length <= this.max) return null;
-    for (const p of [3, 2] as const) {
-      const idx = this.items.findIndex((i) => i.priority === p);
-      if (idx >= 0) return this.items.splice(idx, 1)[0];
+    const dropped: QueueItem[] = [];
+    while (this.items.filter((i) => i.priority !== 1).length > this.max) {
+      const idx = this.items.findIndex((i) => i.priority === 3);
+      const at = idx >= 0 ? idx : this.items.findIndex((i) => i.priority === 2);
+      dropped.push(this.items.splice(at, 1)[0]);
     }
-    return null;
+    return dropped;
   }
 
   unshift(item: QueueItem): void {

@@ -22,8 +22,7 @@ export class Player {
   ) {}
 
   enqueue(item: QueueItem): void {
-    const dropped = this.queue.push(item);
-    if (dropped) this.done(dropped, 'dropped', 'növbə dolu');
+    for (const d of this.queue.push(item)) this.done(d, 'dropped', 'növbə dolu');
     void this.pump();
   }
 
@@ -43,21 +42,25 @@ export class Player {
     if (!file) return this.pump();
     if (this.paused || !this.out.connected()) {
       this.queue.unshift(item);
-      await rm(file, { force: true });
+      await rm(file, { force: true }).catch(() => {});
       return;
     }
     this.current = { ...item, file };
-    this.out.play(this.current);
-    this.watchdog = setTimeout(() => this.ended(item.id), this.timeoutMs);
+    this.watchdog = setTimeout(() => this.ended(item.id, 'failed', 'overlay cavab vermədi'), this.timeoutMs);
+    try {
+      this.out.play(this.current);
+    } catch (err) {
+      this.ended(item.id, 'failed', err instanceof Error ? err.message : String(err));
+    }
   }
 
-  ended(id: string, result: Result = 'spoken'): void {
+  ended(id: string, result: Result = 'spoken', reason?: string): void {
     const c = this.current;
     if (!c || c.id !== id) return;
     clearTimeout(this.watchdog);
     this.current = null;
-    this.done(c, result);
-    void rm(c.file, { force: true });
+    this.done(c, result, reason);
+    void rm(c.file, { force: true }).catch(() => {});
     void this.pump();
   }
 
@@ -84,6 +87,6 @@ export class Player {
     this.current = null;
     const { file, ...item } = c;
     this.queue.unshift(item);
-    void rm(file, { force: true });
+    void rm(file, { force: true }).catch(() => {});
   }
 }

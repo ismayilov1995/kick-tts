@@ -93,7 +93,7 @@ test('watchdog ends an item the overlay never finished', async () => {
   t.player.enqueue(item('a'));
   await flush();
   await Bun.sleep(80);
-  expect(t.done[0]).toEqual(['a', 'spoken', undefined]);
+  expect(t.done[0]).toEqual(['a', 'failed', 'overlay cavab vermədi']);
 });
 
 test('pause holds the queue until resume', async () => {
